@@ -10,7 +10,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("Outlet Revenue Dashboard")
+st.title("KBC Revenue Dashboard")
 
 # ==============================
 # LOAD DATA
@@ -514,6 +514,7 @@ fig = px.scatter(
     fnb_menu,
     x="Qty",
     y="Profit",
+    title=f"Quadrant Trend Current Week ({week_start} s/d {week_end})",
     text="F&B",
     size="Revenue"
 )
