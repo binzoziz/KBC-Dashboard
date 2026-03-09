@@ -4,6 +4,7 @@ import plotly.express as px
 import numpy as np
 import plotly.graph_objects as go
 
+st.cache_data(ttl=300)
 st.set_page_config(
     page_title="Outlet Dashboard",
     layout="wide"
@@ -15,7 +16,20 @@ st.title("Outlet Revenue Dashboard")
 # LOAD DATA
 # ==============================
 
-data = pd.read_excel("LAPORAN MARET.xlsx")
+def load_data():
+    sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQuLqPQNyCaAgwzou0CXRUTuV-BDP9ICoQBLUGGQ-L7SZgv9ktLLMZ8OKL271tr2A/pub?output=xlsx"
+    return pd.read_excel(sheet_url)
+
+def load_data_fnb():
+    sheet_url_fnb = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTRVluG1urQGwOhAvDmtjZCJtKwZCc4SMBC_l3uDWldvOTDmHL5dSU7wH-bsC28EQ/pub?output=xlsx"
+    return pd.read_excel(sheet_url_fnb, sheet_name="Master Data")
+
+data = load_data()
+fnb = load_data_fnb()
+
+data["Table"] = pd.to_numeric(data["Table"], errors="coerce").fillna(0)
+data["F&B"] = pd.to_numeric(data["F&B"], errors="coerce").fillna(0)
+data["Total"] = pd.to_numeric(data["Total"], errors="coerce").fillna(0)
 
 # ==============================
 # CLEANING
@@ -39,6 +53,94 @@ df = data[[
 df["Tanggal"] = pd.to_datetime(df["Tanggal"], errors="coerce")
 # Sekarang baru buat Date
 df["Date"] = df["Tanggal"].dt.date
+
+# ======================
+# CLEANING DATA FNB
+# ======================
+
+fnb["Tanggal"] = pd.to_datetime(fnb["Tanggal"], errors="coerce")
+fnb["Tanggal"] = fnb["Tanggal"].dt.date
+
+fnb["Revenue"] = fnb["Sub total"]
+fnb["Cost"] = fnb["Modal"] * fnb["Qty"]
+
+fnb["Profit"] = fnb["Revenue"] - fnb["Cost"]
+
+# ==============================
+# FILTER BULAN
+# ==============================
+
+df["Month"] = df["Tanggal"].dt.month
+df["Year"] = df["Tanggal"].dt.year
+
+available_months = (
+    df[["Month","Year"]]
+    .drop_duplicates()
+    .sort_values(["Year","Month"])
+)
+
+month_map = {
+    1:"Januari",2:"Februari",3:"Maret",4:"April",
+    5:"Mei",6:"Juni",7:"Juli",8:"Agustus",
+    9:"September",10:"Oktober",11:"November",12:"Desember"
+}
+
+available_months["Label"] = available_months.apply(
+    lambda x: f"{month_map[x['Month']]} {x['Year']}", axis=1
+)
+
+selected_month = st.selectbox(
+    "Pilih Bulan",
+    available_months["Label"]
+)
+
+selected_row = available_months[
+    available_months["Label"] == selected_month
+].iloc[0]
+
+selected_month_num = selected_row["Month"]
+selected_year = selected_row["Year"]
+
+df = df[
+    (df["Month"] == selected_month_num) &
+    (df["Year"] == selected_year)
+]
+
+# ==============================
+# FILTER TANGGAL
+# ==============================
+
+min_date = df["Date"].min()
+max_date = df["Date"].max()
+
+start_date, end_date = st.date_input(
+    "Pilih Range Tanggal",
+    value=(min_date, max_date),
+    min_value=min_date,
+    max_value=max_date
+)
+
+df = df[
+    (df["Date"] >= start_date) &
+    (df["Date"] <= end_date)
+]
+
+fnb_filtered = fnb[
+    (fnb["Tanggal"] >= start_date) &
+    (fnb["Tanggal"] <= end_date)
+]
+
+daily_fnb = fnb_filtered.groupby("Tanggal").agg({
+    "Revenue":"sum",
+    "Profit":"sum",
+    "Qty":"sum"
+}).reset_index()
+
+daily_fnb = fnb_filtered.groupby("Tanggal").agg({
+    "Revenue":"sum",
+    "Profit":"sum",
+    "Qty":"sum"
+}).reset_index()
 
 # ==============================
 # DAILY METRICS (CLEAN VERSION)
@@ -82,6 +184,15 @@ if mtd_total != 0:
 else:
     mtd_table_pct = 0
     mtd_fnb_pct = 0
+
+fnb_menu = fnb_filtered.groupby("F&B").agg({
+    "Revenue":"sum",
+    "Profit":"sum",
+    "Qty":"sum"
+}).reset_index()
+
+x_mid = fnb_menu["Qty"].mean()
+y_mid = fnb_menu["Profit"].mean()
 
 # ==============================
 # TOP METRICS DISPLAY
@@ -229,117 +340,6 @@ fig.update_layout(
 fig.update_yaxes(autorange="reversed")
 
 st.plotly_chart(fig, use_container_width=True)
-
-# # ==============================
-# # TABLE PER HOUR (DAILY + MTD)
-# # ==============================
-
-# view_mode = st.radio(
-#     "Hourly View Mode",
-#     ["Daily", "MTD"],
-#     horizontal=True
-# )
-
-# # Pastikan tanggal format benar
-# df["Tanggal"] = pd.to_datetime(df["Tanggal"], errors="coerce")
-# df["Date"] = df["Tanggal"].dt.date
-
-# latest_date = df["Date"].max()
-# latest_month = df["Tanggal"].dt.month.max()
-# latest_year = df["Tanggal"].dt.year.max()
-
-# # Gabungkan tanggal + jam mulai
-# df["Mulai"] = pd.to_datetime(
-#     df["Tanggal"].dt.strftime("%Y-%m-%d") + " " + df["Mulai"].astype(str),
-#     errors="coerce"
-# )
-
-# df["Selesai"] = pd.to_datetime(
-#     df["Tanggal"].dt.strftime("%Y-%m-%d") + " " + df["Selesai"].astype(str),
-#     errors="coerce"
-# )
-
-# hours = list(range(12, 24)) + list(range(0, 3))  # 12 AM to 4 AM
-# total_tables = 15
-# hourly_data = []
-
-# if view_mode == "Daily":
-#     working_df = df[df["Date"] == latest_date]
-# else:
-#     working_df = df[
-#         (df["Tanggal"].dt.month == latest_month) &
-#         (df["Tanggal"].dt.year == latest_year)
-#     ]
-
-# for hour in hours:
-#     active_counts = []
-
-#     # Kalau Daily → hanya 1 hari
-#     if view_mode == "Daily":
-#         start_hour = pd.Timestamp(f"{latest_date} {hour:02d}:00:00")
-#         end_hour = start_hour + pd.Timedelta(hours=1)
-
-#         active_tables = working_df[
-#             (working_df["Mulai"] <= end_hour) &
-#             (working_df["Selesai"] >= start_hour)
-#         ]["Table Number"].nunique()
-
-#         active_counts.append(active_tables)
-
-#     # Kalau MTD → hitung per hari lalu rata-rata
-#     else:
-#         for single_date in working_df["Date"].unique():
-
-#             day_df = working_df[working_df["Date"] == single_date]
-
-#             start_hour = pd.Timestamp(f"{single_date} {hour:02d}:00:00")
-#             end_hour = start_hour + pd.Timedelta(hours=1)
-
-#             active_tables = day_df[
-#                 (day_df["Mulai"] <= end_hour) &
-#                 (day_df["Selesai"] >= start_hour)
-#             ]["Table Number"].nunique()
-
-#             active_counts.append(active_tables)
-
-#     avg_active = sum(active_counts) / len(active_counts) if active_counts else 0
-#     pct = (avg_active / total_tables) * 100
-
-#     hourly_data.append({
-#         "Hour": f"{hour:02d}:00",
-#         "Active": round(avg_active, 1),
-#         "Pct": pct
-#     })
-
-# hourly_df = pd.DataFrame(hourly_data)
-
-# fig = go.Figure()
-
-# fig.add_trace(go.Bar(
-#     y=hourly_df["Hour"],
-#     x=hourly_df["Pct"],
-#     orientation="h",
-#     text=[
-#         f"{p:.0f}% ({a}/15 Table)"
-#         for p, a in zip(hourly_df["Pct"], hourly_df["Active"])
-#     ],
-#     textposition="outside"
-# ))
-
-# fig.update_layout(
-#     template="simple_white",
-#     height=500,
-#     xaxis=dict(range=[0,100], title="Occupancy %"),
-#     yaxis=dict(autorange="reversed"),
-#     margin=dict(l=40, r=40, t=40, b=40)
-# )
-
-# st.subheader(f"Hourly Table Occupancy ({view_mode})")
-# st.plotly_chart(fig, use_container_width=True)
-
-# ==============================
-# TABLE PER HOUR (DAILY + MTD)
-# ==============================
 
 view_mode = st.radio(
     "Hourly View Mode",
@@ -501,4 +501,26 @@ fig_weekday.update_layout(
 )
 
 st.plotly_chart(fig_weekday, use_container_width=True)
+
+# ==============================
+# Quadrant
+# ==============================
+
+if not fnb_menu.empty:
+    x_mid = fnb_menu["Qty"].mean()
+    y_mid = fnb_menu["Profit"].mean()
+    
+fig = px.scatter(
+    fnb_menu,
+    x="Qty",
+    y="Profit",
+    text="F&B",
+    size="Revenue"
+)
+
+fig.add_vline(x=x_mid, line_dash="dash")
+fig.add_hline(y=y_mid, line_dash="dash")
+
+st.plotly_chart(fig, use_container_width=True)
+# st.plotly_chart(fig)
 
