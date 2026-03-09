@@ -514,7 +514,7 @@ fig = px.scatter(
     fnb_menu,
     x="Qty",
     y="Profit",
-    title=f"Quadrant Trend Current Week ({week_start} s/d {week_end})",
+    title=f"Quadrant Trend Current Week ({min_date} s/d {max_date})",
     text="F&B",
     size="Revenue"
 )
