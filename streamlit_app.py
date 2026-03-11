@@ -91,7 +91,8 @@ available_months["Label"] = available_months.apply(
 
 selected_month = st.selectbox(
     "Pilih Bulan",
-    available_months["Label"]
+    available_months["Label"],
+    index=len(available_months) - 1
 )
 
 selected_row = available_months[
