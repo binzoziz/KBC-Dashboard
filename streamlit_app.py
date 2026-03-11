@@ -253,16 +253,238 @@ with col6:
         f"{mtd_fnb_pct:.1f}%"
     )
 
+# # ==============================
+# # HEATMAP TABLE
+# # ==============================
+
+# df.columns = df.columns.str.strip()
+
+# df["Tanggal"] = pd.to_datetime(df["Tanggal"], errors="coerce")
+# df["Date"] = df["Tanggal"].dt.date
+
+# # Gunakan Table Number (bukan Table)
+# df["Table Number"] = (
+#     df["Table Number"]
+#     .astype(str)
+#     .str.extract("(\d+)")
+#     .astype(int)
+# )
+
+# # Pastikan Total numeric
+# df["Total"] = (
+#     df["Total"]
+#     .astype(str)
+#     .str.replace(",", "", regex=False)
+# )
+
+# df["Total"] = pd.to_numeric(df["Total"], errors="coerce").fillna(0)
+
+# view_mode = st.radio("View Mode", ["Daily", "MTD"], horizontal=True)
+
+# today = df["Date"].max()
+
+# if view_mode == "Daily":
+#     filtered_df = df[df["Date"] == today]
+# else:
+#     filtered_df = df[
+#         (df["Tanggal"].dt.month == today.month) &
+#         (df["Tanggal"].dt.year == today.year)
+#     ]
+
+# table_heat = (
+#     filtered_df.groupby("Table Number")["Total"]
+#     .sum()
+#     .reset_index()
+# )
+
+# all_tables = pd.DataFrame({"Table Number": range(1, 16)})
+
+# table_heat = all_tables.merge(
+#     table_heat,
+#     on="Table Number",
+#     how="left"
+# ).fillna(0)
+
+# grand_total = table_heat["Total"].sum()
+
+# if grand_total > 0:
+#     table_heat["Pct"] = table_heat["Total"] / grand_total * 100
+# else:
+#     table_heat["Pct"] = 0
+
+# values = table_heat["Pct"].values.reshape(3, 5)
+
+# text_matrix = []
+
+# for i in range(3):
+#     row = []
+#     for j in range(5):
+#         idx = i * 5 + j
+#         table_no = int(table_heat.iloc[idx]["Table Number"])
+#         pct = table_heat.iloc[idx]["Pct"]
+
+#         row.append(f"Table {table_no}<br>{pct:.1f}%")
+#     text_matrix.append(row)
+
+# fig = go.Figure(data=go.Heatmap(
+#     z=values,
+#     text=text_matrix,
+#     texttemplate="%{text}",
+#     colorscale="Greens",
+#     xgap=6,
+#     ygap=6,
+#     hovertemplate="%{text}<extra></extra>"
+# ))
+
+# fig.update_layout(
+#     template="simple_white",
+#     height=500,
+#     xaxis=dict(showticklabels=False),
+#     yaxis=dict(showticklabels=False)
+# )
+
+# # INI YANG FIX
+# fig.update_yaxes(autorange="reversed")
+
+# st.plotly_chart(fig, use_container_width=True)
+
+# view_mode = st.radio(
+#     "Hourly View Mode",
+#     ["Daily", "MTD"],
+#     horizontal=True
+# )
+
+# df["Tanggal"] = pd.to_datetime(df["Tanggal"], errors="coerce")
+# df = df.dropna(subset=["Tanggal"])
+
+# df["Date"] = df["Tanggal"].dt.date
+
+# # gabungkan tanggal + jam
+# df["Mulai_dt"] = pd.to_datetime(df["Tanggal"].astype(str) + " " + df["Mulai"].astype(str), errors="coerce")
+# df["Selesai_dt"] = pd.to_datetime(df["Tanggal"].astype(str) + " " + df["Selesai"].astype(str), errors="coerce")
+
+# # handle lewat tengah malam
+# df.loc[df["Selesai_dt"] < df["Mulai_dt"], "Selesai_dt"] += pd.Timedelta(days=1)
+
+# latest_date = df["Date"].max()
+
+# hours = list(range(12,24)) + list(range(0,3))
+# total_tables = 15
+
+# hourly_data = []
+
+# if view_mode == "Daily":
+#     working_df = df[df["Date"] == latest_date]
+# else:
+#     latest_ts = df["Tanggal"].max()
+#     working_df = df[
+#         (df["Tanggal"].dt.month == latest_ts.month) &
+#         (df["Tanggal"].dt.year == latest_ts.year)
+#     ]
+
+# for hour in hours:
+
+#     active_counts = []
+
+#     if view_mode == "Daily":
+
+#         start_hour = pd.Timestamp(f"{latest_date} {hour:02d}:00:00")
+#         end_hour = start_hour + pd.Timedelta(hours=1)
+
+#         active = working_df[
+#             (working_df["Mulai_dt"] <= end_hour) &
+#             (working_df["Selesai_dt"] >= start_hour)
+#         ]["Table Number"].nunique()
+
+#         active_counts.append(active)
+
+#     else:
+
+#         for d in working_df["Date"].unique():
+
+#             day_df = working_df[working_df["Date"] == d]
+
+#             start_hour = pd.Timestamp(f"{d} {hour:02d}:00:00")
+#             end_hour = start_hour + pd.Timedelta(hours=1)
+
+#             active = day_df[
+#                 (day_df["Mulai_dt"] <= end_hour) &
+#                 (day_df["Selesai_dt"] >= start_hour)
+#             ]["Table Number"].nunique()
+
+#             active_counts.append(active)
+
+#     avg_active = sum(active_counts)/len(active_counts) if active_counts else 0
+#     pct = (avg_active/total_tables)*100
+
+#     hourly_data.append({
+#         "Hour":f"{hour:02d}:00",
+#         "Active":round(avg_active,1),
+#         "Pct":pct
+#     })
+
+# hourly_df = pd.DataFrame(hourly_data)
+
+# fig = go.Figure()
+
+# fig.add_trace(go.Bar(
+#     y=hourly_df["Hour"],
+#     x=hourly_df["Pct"],
+#     orientation="h",
+#     text=[
+#         f"{p:.0f}% ({a}/15 Table)"
+#         for p,a in zip(hourly_df["Pct"], hourly_df["Active"])
+#     ],
+#     textposition="outside"
+# ))
+
+# fig.update_layout(
+#     template="simple_white",
+#     height=500,
+#     xaxis=dict(range=[0,100], title="Occupancy %"),
+#     yaxis=dict(autorange="reversed")
+# )
+
+# st.subheader(f"Hourly Table Occupancy ({view_mode})")
+# st.plotly_chart(fig, use_container_width=True)
+
+# # ==============================
+# # CLEAN DATA
+# # ==============================
+
+# df.columns = df.columns.str.strip()
+
+# df["Tanggal"] = pd.to_datetime(df["Tanggal"], errors="coerce")
+# df = df.dropna(subset=["Tanggal"])
+
+# df["Date"] = df["Tanggal"].dt.date
+
+# df["Table Number"] = (
+#     df["Table Number"]
+#     .astype(str)
+#     .str.extract("(\d+)")
+#     .astype(int)
+# )
+
+# df["Total"] = (
+#     df["Total"]
+#     .astype(str)
+#     .str.replace(",", "", regex=False)
+# )
+
+# df["Total"] = pd.to_numeric(df["Total"], errors="coerce").fillna(0)
+
 # ==============================
-# HEATMAP TABLE
+# CLEAN DATA
 # ==============================
 
 df.columns = df.columns.str.strip()
 
 df["Tanggal"] = pd.to_datetime(df["Tanggal"], errors="coerce")
+df = df.dropna(subset=["Tanggal"])
+
 df["Date"] = df["Tanggal"].dt.date
 
-# Gunakan Table Number (bukan Table)
 df["Table Number"] = (
     df["Table Number"]
     .astype(str)
@@ -270,7 +492,6 @@ df["Table Number"] = (
     .astype(int)
 )
 
-# Pastikan Total numeric
 df["Total"] = (
     df["Total"]
     .astype(str)
@@ -279,17 +500,65 @@ df["Total"] = (
 
 df["Total"] = pd.to_numeric(df["Total"], errors="coerce").fillna(0)
 
-view_mode = st.radio("View Mode", ["Daily", "MTD"], horizontal=True)
+# ==============================
+# CREATE DATETIME SESSION
+# ==============================
 
-today = df["Date"].max()
+df["Mulai_dt"] = pd.to_datetime(
+    df["Tanggal"].astype(str) + " " + df["Mulai"].astype(str),
+    errors="coerce"
+)
+
+df["Selesai_dt"] = pd.to_datetime(
+    df["Tanggal"].astype(str) + " " + df["Selesai"].astype(str),
+    errors="coerce"
+)
+
+# Handle lewat tengah malam
+df.loc[df["Selesai_dt"] < df["Mulai_dt"], "Selesai_dt"] += pd.Timedelta(days=1)
+
+# ==============================
+# FILTER DATA BY DASHBOARD DATE
+# ==============================
+
+df_filtered = df[
+    (df["Date"] >= start_date) &
+    (df["Date"] <= end_date)
+]
+
+latest_date = df_filtered["Date"].max()
+num_days = (end_date - start_date).days + 1
+
+# ==============================
+# HEATMAP TABLE
+# ==============================
+
+view_mode = st.radio(
+    "Heatmap View Mode",
+    ["Daily","MTD"],
+    horizontal=True
+)
+
+df_daily = df_filtered[df_filtered["Date"] == latest_date]
+df_mtd = df_filtered
+
+latest_date = df_filtered["Date"].max()
 
 if view_mode == "Daily":
-    filtered_df = df[df["Date"] == today]
-else:
-    filtered_df = df[
-        (df["Tanggal"].dt.month == today.month) &
-        (df["Tanggal"].dt.year == today.year)
-    ]
+
+    filtered_df = df_filtered[df_filtered["Date"] == latest_date]
+
+else:  # MTD
+
+    filtered_df = df_filtered
+
+if view_mode == "Daily":
+
+    filtered_df = df_filtered[df_filtered["Date"] == latest_date]
+
+else:  # MTD
+
+    filtered_df = df_filtered
 
 table_heat = (
     filtered_df.groupby("Table Number")["Total"]
@@ -297,7 +566,7 @@ table_heat = (
     .reset_index()
 )
 
-all_tables = pd.DataFrame({"Table Number": range(1, 16)})
+all_tables = pd.DataFrame({"Table Number": range(1,16)})
 
 table_heat = all_tables.merge(
     table_heat,
@@ -308,25 +577,31 @@ table_heat = all_tables.merge(
 grand_total = table_heat["Total"].sum()
 
 if grand_total > 0:
-    table_heat["Pct"] = table_heat["Total"] / grand_total * 100
+    table_heat["Pct"] = table_heat["Total"]/grand_total*100
 else:
     table_heat["Pct"] = 0
 
-values = table_heat["Pct"].values.reshape(3, 5)
+values = table_heat["Pct"].values.reshape(3,5)
 
 text_matrix = []
 
 for i in range(3):
+
     row = []
+
     for j in range(5):
-        idx = i * 5 + j
+
+        idx = i*5 + j
+
         table_no = int(table_heat.iloc[idx]["Table Number"])
         pct = table_heat.iloc[idx]["Pct"]
 
         row.append(f"Table {table_no}<br>{pct:.1f}%")
+
     text_matrix.append(row)
 
 fig = go.Figure(data=go.Heatmap(
+
     z=values,
     text=text_matrix,
     texttemplate="%{text}",
@@ -334,6 +609,7 @@ fig = go.Figure(data=go.Heatmap(
     xgap=6,
     ygap=6,
     hovertemplate="%{text}<extra></extra>"
+
 ))
 
 fig.update_layout(
@@ -343,50 +619,57 @@ fig.update_layout(
     yaxis=dict(showticklabels=False)
 )
 
-# INI YANG FIX
 fig.update_yaxes(autorange="reversed")
 
+st.subheader("Table Revenue Heatmap")
 st.plotly_chart(fig, use_container_width=True)
 
-view_mode = st.radio(
+# ==============================
+# HOURLY OCCUPANCY
+# ==============================
+
+view_mode_hour = st.radio(
     "Hourly View Mode",
-    ["Daily", "MTD"],
+    ["Daily","MTD"],
     horizontal=True
 )
 
-df["Tanggal"] = pd.to_datetime(df["Tanggal"], errors="coerce")
-df = df.dropna(subset=["Tanggal"])
+df["Mulai_dt"] = pd.to_datetime(
+    df["Tanggal"].astype(str) + " " + df["Mulai"].astype(str),
+    errors="coerce"
+)
 
-df["Date"] = df["Tanggal"].dt.date
+df["Selesai_dt"] = pd.to_datetime(
+    df["Tanggal"].astype(str) + " " + df["Selesai"].astype(str),
+    errors="coerce"
+)
 
-# gabungkan tanggal + jam
-df["Mulai_dt"] = pd.to_datetime(df["Tanggal"].astype(str) + " " + df["Mulai"].astype(str), errors="coerce")
-df["Selesai_dt"] = pd.to_datetime(df["Tanggal"].astype(str) + " " + df["Selesai"].astype(str), errors="coerce")
-
-# handle lewat tengah malam
 df.loc[df["Selesai_dt"] < df["Mulai_dt"], "Selesai_dt"] += pd.Timedelta(days=1)
 
-latest_date = df["Date"].max()
-
 hours = list(range(12,24)) + list(range(0,3))
+
 total_tables = 15
 
 hourly_data = []
 
-if view_mode == "Daily":
-    working_df = df[df["Date"] == latest_date]
+if view_mode_hour == "Daily":
+
+    if num_days == 1:
+        latest_date = start_date
+    else:
+        latest_date = end_date
+
+    working_df = df_filtered[df_filtered["Date"] == latest_date]
+
 else:
-    latest_ts = df["Tanggal"].max()
-    working_df = df[
-        (df["Tanggal"].dt.month == latest_ts.month) &
-        (df["Tanggal"].dt.year == latest_ts.year)
-    ]
+
+    working_df = df_filtered
 
 for hour in hours:
 
     active_counts = []
 
-    if view_mode == "Daily":
+    if view_mode_hour == "Daily":
 
         start_hour = pd.Timestamp(f"{latest_date} {hour:02d}:00:00")
         end_hour = start_hour + pd.Timedelta(hours=1)
@@ -415,12 +698,15 @@ for hour in hours:
             active_counts.append(active)
 
     avg_active = sum(active_counts)/len(active_counts) if active_counts else 0
+
     pct = (avg_active/total_tables)*100
 
     hourly_data.append({
+
         "Hour":f"{hour:02d}:00",
         "Active":round(avg_active,1),
         "Pct":pct
+
     })
 
 hourly_df = pd.DataFrame(hourly_data)
@@ -428,24 +714,31 @@ hourly_df = pd.DataFrame(hourly_data)
 fig = go.Figure()
 
 fig.add_trace(go.Bar(
+
     y=hourly_df["Hour"],
     x=hourly_df["Pct"],
     orientation="h",
+
     text=[
         f"{p:.0f}% ({a}/15 Table)"
         for p,a in zip(hourly_df["Pct"], hourly_df["Active"])
     ],
+
     textposition="outside"
+
 ))
 
 fig.update_layout(
+
     template="simple_white",
     height=500,
     xaxis=dict(range=[0,100], title="Occupancy %"),
     yaxis=dict(autorange="reversed")
+
 )
 
-st.subheader(f"Hourly Table Occupancy ({view_mode})")
+st.subheader(f"Hourly Table Occupancy ({view_mode_hour})")
+
 st.plotly_chart(fig, use_container_width=True)
 
 # ==============================
