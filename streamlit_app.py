@@ -4,7 +4,7 @@ import plotly.express as px
 import numpy as np
 import plotly.graph_objects as go
 
-st.cache_data(ttl=300)
+st.cache_data(ttl=60)
 st.set_page_config(
     page_title="Outlet Dashboard",
     layout="wide"
@@ -113,12 +113,18 @@ df = df[
 min_date = df["Date"].min()
 max_date = df["Date"].max()
 
-start_date, end_date = st.date_input(
+date_range = st.date_input(
     "Pilih Range Tanggal",
     value=(min_date, max_date),
     min_value=min_date,
     max_value=max_date
 )
+
+if len(date_range) != 2:
+    st.info("Pilih tanggal awal dan akhir. Jika ingin melihat data 1 hari, klik tanggal yang sama dua kali.")
+    st.stop()
+
+start_date, end_date = date_range
 
 df = df[
     (df["Date"] >= start_date) &
