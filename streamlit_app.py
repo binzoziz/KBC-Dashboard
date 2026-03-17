@@ -17,7 +17,7 @@ st.title("KBC Revenue Dashboard")
 # ==============================
 
 def load_data():
-    sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQuLqPQNyCaAgwzou0CXRUTuV-BDP9ICoQBLUGGQ-L7SZgv9ktLLMZ8OKL271tr2A/pub?output=xlsx"
+    sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ28wjkKC-KhZ30fEb5TWzPwTRvgYdGu5vPBfplbcdTBDoEe7XQueCTo_XrSyhMf7h-uQk37gKmDrpd/pub?output=xlsx"
     return pd.read_excel(sheet_url)
 
 def load_data_fnb():
