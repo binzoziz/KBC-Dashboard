@@ -581,26 +581,92 @@ fig_weekday.update_layout(
 
 st.plotly_chart(fig_weekday, use_container_width=True)
 
+# # ==============================
+# # Quadrant
+# # ==============================
+
+# if not fnb_menu.empty:
+#     x_mid = fnb_menu["Qty"].mean()
+#     y_mid = fnb_menu["Profit"].mean()
+    
+# fig = px.scatter(
+#     fnb_menu,
+#     x="Qty",
+#     y="Profit",
+#     title=f"Quadrant Trend Current Week ({min_date} s/d {max_date})",
+#     text="F&B",
+#     size="Revenue"
+# )
+
+# fig.add_vline(x=x_mid, line_dash="dash")
+# fig.add_hline(y=y_mid, line_dash="dash")
+
+# st.plotly_chart(fig, use_container_width=True)
+# # st.plotly_chart(fig)
+
 # ==============================
-# Quadrant
+# Quadrant Update (With All 4 Labels)
 # ==============================
 
 if not fnb_menu.empty:
+    # 1. Hitung Profit Margin (%)
+    fnb_menu["Margin %"] = (fnb_menu["Profit"] / fnb_menu["Revenue"]) * 100
+    fnb_menu["Margin %"] = fnb_menu["Margin %"].fillna(0)
+
+    # 2. Hitung Titik Tengah (Benchmark)
+    # Ini menentukan di mana garis horizontal dan vertikal berpotongan
     x_mid = fnb_menu["Qty"].mean()
-    y_mid = fnb_menu["Profit"].mean()
+    y_mid = fnb_menu["Margin %"].mean()
     
-fig = px.scatter(
-    fnb_menu,
-    x="Qty",
-    y="Profit",
-    title=f"Quadrant Trend Current Week ({min_date} s/d {max_date})",
-    text="F&B",
-    size="Revenue"
-)
+    # 3. Buat Chart
+    fig_quad = px.scatter(
+        fnb_menu,
+        x="Qty",
+        y="Margin %",
+        title=f"F&B Performance Quadrant ({start_date} - {end_date})",
+        text="F&B",
+        size="Revenue",
+        color="Margin %", # Tambah warna biar lebih indikatif
+        color_continuous_scale="RdYlGn", # Merah ke Hijau
+        labels={"Margin %": "Margin (%)", "Qty": "Jumlah Terjual"},
+        hover_data={"Margin %": ":.2f"} # Merapikan format di hover
+    )
 
-fig.add_vline(x=x_mid, line_dash="dash")
-fig.add_hline(y=y_mid, line_dash="dash")
+    # 4. TAMBAHKAN GARIS PEMBAGI (Dashed gray lines)
+    fig_quad.add_vline(x=x_mid, line_dash="dash", line_color="gray", opacity=0.7)
+    fig_quad.add_hline(y=y_mid, line_dash="dash", line_color="gray", opacity=0.7)
 
-st.plotly_chart(fig, use_container_width=True)
-# st.plotly_chart(fig)
+    # 5. TAMBAHKAN LABEL UNTUK KEEMPAT KUADRAN
+    
+    # Posisi label akan kita taruh di ujung-ujung sumbu agar tidak menutupi titik data
+    max_qty = fnb_menu["Qty"].max()
+    min_qty = fnb_menu["Qty"].min()
+    max_margin = fnb_menu["Margin %"].max()
+    min_margin = fnb_menu["Margin %"].min()
+
+    # Kanan Atas: Laku & Untung Gede (STARS)
+    fig_quad.add_annotation(x=max_qty, y=max_margin, text="HIGH VOLUME HIGH MARGIN", showarrow=False, yshift=15, font=dict(color="green", size=14))
+    
+    # Kiri Atas: Untung Gede tapi Kurang Laku (UNDERPRICED / HIDDEN GEMS)
+    fig_quad.add_annotation(x=min_qty, y=max_margin, text="LOW VOLUME HIGH MARGIN", showarrow=False, yshift=15, font=dict(color="#FF8C00", size=13)) # DarkOrange
+
+    # Kanan Bawah: Laku tapi Untung Tipis (WORKHORSES / VOLUME DRIVE)
+    fig_quad.add_annotation(x=max_qty, y=min_margin, text="HIGH VOLUME LOW MARGIN", showarrow=False, yshift=-15, font=dict(color="blue", size=13))
+
+    # Kiri Bawah: Gak Laku & Untung Tipis (DOGS / MENU SLEEPERS)
+    # --- INI YANG KITA TAMBAHKAN ---
+    fig_quad.add_annotation(x=min_qty, y=min_margin, text="LOW VOLUME LOW MARGIN", showarrow=False, yshift=-15, font=dict(color="red", size=13))
+
+    # 6. Finalisasi Tampilan
+    fig_quad.update_traces(textposition='top center') # Nama menu muncul di atas titik
+    fig_quad.update_layout(
+        template="simple_white",
+        yaxis_ticksuffix="%", # Tambah tanda % di sumbu y
+        height=600 # Sesuaikan tinggi
+    )
+
+    st.subheader("Analisis Kuadran Menu F&B")
+    st.plotly_chart(fig_quad, use_container_width=True)
+else:
+    st.warning("Belum ada data F&B untuk periode ini.")
 
