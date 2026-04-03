@@ -613,60 +613,54 @@ if not fnb_menu.empty:
     fnb_menu["Margin %"] = (fnb_menu["Profit"] / fnb_menu["Revenue"]) * 100
     fnb_menu["Margin %"] = fnb_menu["Margin %"].fillna(0)
 
-    # 2. Hitung Titik Tengah (Benchmark)
-    # Ini menentukan di mana garis horizontal dan vertikal berpotongan
-    x_mid = fnb_menu["Qty"].mean()
-    y_mid = fnb_menu["Margin %"].mean()
+    # 2. Hitung Titik Tengah (Benchmark) - TUKAR POSISI MID
+    x_mid = fnb_menu["Margin %"].mean() # Sekarang X adalah Margin
+    y_mid = fnb_menu["Qty"].mean()      # Sekarang Y adalah Qty
     
-    # 3. Buat Chart
+    # 3. Buat Chart - TUKAR x DAN y
     fig_quad = px.scatter(
         fnb_menu,
-        x="Qty",
-        y="Margin %",
+        x="Margin %",   # Tukar ke sini
+        y="Qty",        # Tukar ke sini
         title=f"F&B Performance Quadrant ({start_date} - {end_date})",
         text="F&B",
         size="Revenue",
-        color="Margin %", # Tambah warna biar lebih indikatif
-        color_continuous_scale="RdYlGn", # Merah ke Hijau
-        labels={"Margin %": "Margin (%)", "Qty": "Jumlah Terjual"},
-        hover_data={"Margin %": ":.2f"} # Merapikan format di hover
+        color="Margin %", 
+        color_continuous_scale="RdYlGn",
+        labels={"Margin %": "Margin (%)", "Qty": "Jumlah Terjual"}, # Label otomatis menyesuaikan
+        hover_data={"Qty": True, "Margin %": ":.2f"}
     )
 
-    # 4. TAMBAHKAN GARIS PEMBAGI (Dashed gray lines)
+    # 4. TAMBAHKAN GARIS PEMBAGI
     fig_quad.add_vline(x=x_mid, line_dash="dash", line_color="gray", opacity=0.7)
     fig_quad.add_hline(y=y_mid, line_dash="dash", line_color="gray", opacity=0.7)
 
-    # 5. TAMBAHKAN LABEL UNTUK KEEMPAT KUADRAN
-    
-    # Posisi label akan kita taruh di ujung-ujung sumbu agar tidak menutupi titik data
+    # 5. TAMBAHKAN LABEL UNTUK KEEMPAT KUADRAN (Koordinat disesuaikan)
     max_qty = fnb_menu["Qty"].max()
     min_qty = fnb_menu["Qty"].min()
     max_margin = fnb_menu["Margin %"].max()
     min_margin = fnb_menu["Margin %"].min()
 
-    # Kanan Atas: Laku & Untung Gede (STARS)
-    fig_quad.add_annotation(x=max_qty, y=max_margin, text="HIGH VOLUME HIGH MARGIN", showarrow=False, yshift=15, font=dict(color="green", size=14))
+    # Kanan Atas: Margin Tinggi & Laku (STARS)
+    fig_quad.add_annotation(x=max_margin, y=max_qty, text="HIGH MARGIN HIGH VOLUME", showarrow=False, yshift=15, font=dict(color="green", size=14))
     
-    # Kiri Atas: Untung Gede tapi Kurang Laku (UNDERPRICED / HIDDEN GEMS)
-    fig_quad.add_annotation(x=min_qty, y=max_margin, text="LOW VOLUME HIGH MARGIN", showarrow=False, yshift=15, font=dict(color="#FF8C00", size=13)) # DarkOrange
+    # Kanan Bawah: Margin Tinggi tapi Kurang Laku (HIDDEN GEMS)
+    fig_quad.add_annotation(x=max_margin, y=min_qty, text="HIGH MARGIN LOW VOLUME", showarrow=False, yshift=-15, font=dict(color="#FF8C00", size=13))
 
-    # Kanan Bawah: Laku tapi Untung Tipis (WORKHORSES / VOLUME DRIVE)
-    fig_quad.add_annotation(x=max_qty, y=min_margin, text="HIGH VOLUME LOW MARGIN", showarrow=False, yshift=-15, font=dict(color="blue", size=13))
+    # Kiri Atas: Margin Rendah tapi Laku (WORKHORSES)
+    fig_quad.add_annotation(x=min_margin, y=max_qty, text="LOW MARGIN HIGH VOLUME", showarrow=False, yshift=15, font=dict(color="blue", size=13))
 
-    # Kiri Bawah: Gak Laku & Untung Tipis (DOGS / MENU SLEEPERS)
-    # --- INI YANG KITA TAMBAHKAN ---
-    fig_quad.add_annotation(x=min_qty, y=min_margin, text="LOW VOLUME LOW MARGIN", showarrow=False, yshift=-15, font=dict(color="red", size=13))
+    # Kiri Bawah: Margin Rendah & Gak Laku (DOGS)
+    fig_quad.add_annotation(x=min_margin, y=min_qty, text="LOW MARGIN LOW VOLUME", showarrow=False, yshift=-15, font=dict(color="red", size=13))
 
     # 6. Finalisasi Tampilan
-    fig_quad.update_traces(textposition='top center') # Nama menu muncul di atas titik
+    fig_quad.update_traces(textposition='top center')
     fig_quad.update_layout(
         template="simple_white",
-        yaxis_ticksuffix="%", # Tambah tanda % di sumbu y
-        height=600 # Sesuaikan tinggi
+        xaxis_ticksuffix="%", # Sekarang tanda % pindah ke sumbu X (Margin)
+        height=600 
     )
 
     st.subheader("Analisis Kuadran Menu F&B")
     st.plotly_chart(fig_quad, use_container_width=True)
-else:
-    st.warning("Belum ada data F&B untuk periode ini.")
 
