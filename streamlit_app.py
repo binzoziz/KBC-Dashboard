@@ -182,53 +182,72 @@ if not fnb_filtered.empty:
     st.plotly_chart(fig_quad, use_container_width=True)
 
 # ==============================
-# TREND ANALYSIS (FIXED MONDAY START)
+# TREND ANALYSIS (STRICT NORMALIZATION)
 # ==============================
 st.divider()
 st.subheader("📈 Revenue Growth Trend")
 
-c_trend1, c_trend2 = st.columns([1, 2])
+c_trend1, c_trend2, c_trend3 = st.columns([1, 1, 1])
 with c_trend1:
-    trend_metric = st.selectbox("Select Metric", ["Total", "Table", "F&B"])
-    time_grain = st.radio("Breakdown by", ["Weekly", "Monthly"], horizontal=True)
+    trend_metric = st.selectbox("Select Metric", ["Total", "Table", "F&B"], key="tm_select")
+with c_trend2:
+    time_grain = st.radio("Breakdown by", ["Weekly", "Monthly"], horizontal=True, key="tg_radio")
 
+# 1. Persiapan Data Mentah
 df_trend = df.copy()
-df_trend['Tanggal'] = pd.to_datetime(df_trend['Date'])
+# Pastikan benar-benar format datetime dan hilangkan jam/menit/detik (normalize)
+df_trend['Tanggal_Clean'] = pd.to_datetime(df_trend['Date']).dt.normalize()
 
 if time_grain == "Monthly":
-    # Format: Jan 2024
-    df_trend['Period_Date'] = df_trend['Tanggal'].dt.to_period('M').dt.to_timestamp()
-    df_trend['Period_Label'] = df_trend['Period_Date'].dt.strftime('%b %Y')
+    # Tarik ke tanggal 1 tiap bulan
+    df_trend['Period_Date'] = df_trend['Tanggal_Clean'].dt.to_period('M').dt.to_timestamp()
 else:
-    # 'W-MON' memastikan awal minggu adalah hari Senin
-    # Kita ambil tanggal Senin tersebut sebagai patokan
-    df_trend['Period_Date'] = df_trend['Tanggal'].dt.to_period('W-MON').dt.to_timestamp()
-    df_trend['Period_Label'] = df_trend['Period_Date'].dt.strftime('%d %b %Y')
+    # PAKSA: Setiap tanggal dikurangi jumlah hari sejak hari Senin terakhir
+    # Ini cara paling manual dan akurat untuk memastikan semua lari ke hari Senin
+    df_trend['Period_Date'] = df_trend['Tanggal_Clean'] - pd.to_timedelta(df_trend['Tanggal_Clean'].dt.dayofweek, unit='D')
 
-# Agregasi data berdasarkan tanggal patokan (agar sortirnya benar)
-trend_data = df_trend.groupby(['Period_Date', 'Period_Label'])[trend_metric].sum().reset_index()
-trend_data = trend_data.sort_values('Period_Date')
+# 2. Agregasi
+trend_data = df_trend.groupby('Period_Date')[trend_metric].sum().reset_index()
 
-# Visualisasi Line Chart
+# 3. Handle Start Date 01 Dec 2025 (Jika belum ada atau ingin dipastikan ada)
+start_target = pd.Timestamp("2025-12-01").normalize()
+if start_target not in trend_data['Period_Date'].values:
+    new_row = pd.DataFrame({'Period_Date': [start_target], trend_metric: [0]})
+    trend_data = pd.concat([new_row, trend_data], ignore_index=True)
+
+# 4. Sorting & Labeling
+trend_data = trend_data.sort_values('Period_Date').reset_index(drop=True)
+if time_grain == "Monthly":
+    trend_data['Period_Label'] = trend_data['Period_Date'].dt.strftime('%b %Y')
+else:
+    trend_data['Period_Label'] = trend_data['Period_Date'].dt.strftime('%d %b %Y')
+
+# 5. Filter Zoom-in Bulan
+with c_trend3:
+    if time_grain == "Weekly":
+        month_list = trend_data['Period_Date'].dt.strftime('%B %Y').unique().tolist()
+        month_options = ["All Time"] + month_list
+        selected_month = st.selectbox("Filter by Month (Weekly)", month_options)
+        
+        if selected_month != "All Time":
+            trend_data = trend_data[trend_data['Period_Date'].dt.strftime('%B %Y') == selected_month]
+
+# 6. Plotting
 fig_trend = px.line(
     trend_data, 
-    x='Period_Label', # Label yang muncul di X-axis (format string)
+    x='Period_Label', 
     y=trend_metric,
     markers=True,
     text=[f"Rp {v:,.0f}" for v in trend_data[trend_metric]],
-    title=f"Movement of {trend_metric} (Starting Every Monday)"
+    title=f"Movement of {trend_metric} ({time_grain})"
 )
 
-fig_trend.update_traces(
-    textposition="top center", 
-    line_width=3, 
-    line_color="#1f77b4"
-)
-
+fig_trend.update_traces(textposition="top center", line_width=3, line_color="#1f77b4")
 fig_trend.update_layout(
     xaxis_title="Week Starting (Monday)",
     yaxis_title="Revenue (Rp)",
-    height=500
+    height=500,
+    xaxis={'type': 'category'} # Memaksa Plotly tidak membuat skala waktu sendiri
 )
 
 st.plotly_chart(fig_trend, use_container_width=True)
