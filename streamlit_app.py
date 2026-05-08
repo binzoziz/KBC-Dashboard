@@ -182,44 +182,41 @@ if not fnb_filtered.empty:
     st.plotly_chart(fig_quad, use_container_width=True)
 
 # ==============================
-# TREND ANALYSIS (MODIFIED)
+# TREND ANALYSIS (FIXED MONDAY START)
 # ==============================
 st.divider()
 st.subheader("📈 Revenue Growth Trend")
 
-# Pilih metrik & periode
 c_trend1, c_trend2 = st.columns([1, 2])
 with c_trend1:
     trend_metric = st.selectbox("Select Metric", ["Total", "Table", "F&B"])
     time_grain = st.radio("Breakdown by", ["Weekly", "Monthly"], horizontal=True)
 
-# Olah data trend
 df_trend = df.copy()
 df_trend['Tanggal'] = pd.to_datetime(df_trend['Date'])
 
 if time_grain == "Monthly":
-    # Format: Jan 2024, Feb 2024, dst.
-    df_trend['Period'] = df_trend['Tanggal'].dt.strftime('%b %Y')
-    # Sortir agar urutan bulan benar secara kalender
-    df_trend = df_trend.sort_values('Tanggal')
+    # Format: Jan 2024
+    df_trend['Period_Date'] = df_trend['Tanggal'].dt.to_period('M').dt.to_timestamp()
+    df_trend['Period_Label'] = df_trend['Period_Date'].dt.strftime('%b %Y')
 else:
-    # Mengambil tanggal hari Senin di minggu tersebut
-    # 'W-MON' artinya minggu dimulai dari hari Senin
-    df_trend['Period'] = df_trend['Tanggal'].dt.to_period('W-MON').apply(lambda r: r.start_time.strftime('%d %b %Y'))
-    # Sortir berdasarkan tanggal asli agar grafik tidak lompat-lompat
-    df_trend = df_trend.sort_values('Tanggal')
+    # 'W-MON' memastikan awal minggu adalah hari Senin
+    # Kita ambil tanggal Senin tersebut sebagai patokan
+    df_trend['Period_Date'] = df_trend['Tanggal'].dt.to_period('W-MON').dt.to_timestamp()
+    df_trend['Period_Label'] = df_trend['Period_Date'].dt.strftime('%d %b %Y')
 
-# Agregasi data (menggunakan groupby tanpa merusak urutan sort)
-trend_data = df_trend.groupby('Period', sort=False)[trend_metric].sum().reset_index()
+# Agregasi data berdasarkan tanggal patokan (agar sortirnya benar)
+trend_data = df_trend.groupby(['Period_Date', 'Period_Label'])[trend_metric].sum().reset_index()
+trend_data = trend_data.sort_values('Period_Date')
 
 # Visualisasi Line Chart
 fig_trend = px.line(
     trend_data, 
-    x='Period', 
+    x='Period_Label', # Label yang muncul di X-axis (format string)
     y=trend_metric,
     markers=True,
     text=[f"Rp {v:,.0f}" for v in trend_data[trend_metric]],
-    title=f"Movement of {trend_metric} ({time_grain})"
+    title=f"Movement of {trend_metric} (Starting Every Monday)"
 )
 
 fig_trend.update_traces(
@@ -229,9 +226,8 @@ fig_trend.update_traces(
 )
 
 fig_trend.update_layout(
-    xaxis_title="Time Period",
+    xaxis_title="Week Starting (Monday)",
     yaxis_title="Revenue (Rp)",
-    margin=dict(t=50, b=50),
     height=500
 )
 
