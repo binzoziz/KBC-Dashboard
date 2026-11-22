@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
+import json
 import logging
 import os
 from pathlib import Path
 from typing import Any
+from contextlib import asynccontextmanager
 
 import gspread
 from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+import uvicorn
 
 from kbc_processor import parse_upload
 
@@ -35,7 +40,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_message:
         await update.effective_message.reply_text(
             "Bot import laporan KBC siap. Kirim /myid untuk melihat ID Telegram-mu. "
-            "Admin perlu memasukkan ID itu ke ALLOWED_TELEGRAM_USER_IDS. Setelah diizinkan, pilih /com1 atau /com2, lalu kirim PDF atau ZIP laporan."
+            "Admin perlu memasukkan ID itu ke ALLOWED_TELEGRAM_USER_IDS. Setelah diizinkan, kirim PDF/ZIP dengan caption /com1 atau /com2, atau pastikan nama file memuat COM1/COM2."
         )
 
 
@@ -49,8 +54,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if update.effective_message:
         await update.effective_message.reply_text(
             "Cara pakai:\n"
-            "1. Kirim /com1 atau /com2 sesuai komputer sumber.\n"
-            "2. Kirim satu PDF atau ZIP yang berisi PDF. Nama file yang memuat COM1/COM2 akan dikenali otomatis.\n"
+            "1. Kirim PDF/ZIP dengan caption /com1 atau /com2 sesuai komputer sumber. Nama file yang memuat COM1/COM2 juga dikenali otomatis.\n"
+            "2. Bisa juga kirim /com1 atau /com2 sebelum file, lalu kirim PDF/ZIP.\n"
             "3. Bot mengenali otomatis laporan Table atau F&B, memetakan nama item, lalu append baris baru.\n"
             "4. Kirim ulang file aman: ID transaksi dipakai untuk melewati baris yang sudah masuk.\n"
             "Perintah: /com1, /com2, /source, /myid, /help. Kirim laporan lewat chat pribadi dengan bot."
@@ -65,8 +70,14 @@ async def select_source(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     command = update.effective_message.text.split()[0].split("@")[0].lower()
     source = "COM1" if command == "/com1" else "COM2"
-    context.user_data["source"] = source
-    await update.effective_message.reply_text(f"Sumber disetel ke {source}. Sekarang kirim PDF atau ZIP.")
+    if os.getenv("BOT_MODE", "polling").strip().lower() == "webhook":
+        await update.effective_message.reply_text(
+            f"Sumber {source}. Untuk memastikan sumber terbaca di server, kirim file dengan caption /{source.lower()} "
+            f"atau sertakan {source} di nama file."
+        )
+    else:
+        context.user_data["source"] = source
+        await update.effective_message.reply_text(f"Sumber disetel ke {source}. Sekarang kirim PDF atau ZIP.")
 
 
 async def current_source(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -129,9 +140,16 @@ def _write_to_sheets(data: dict[str, list[dict[str, Any]]]) -> dict[str, tuple[i
     spreadsheet_id = os.getenv("GOOGLE_SHEET_ID", "").strip()
     if not spreadsheet_id:
         raise RuntimeError("GOOGLE_SHEET_ID belum diisi pada .env.")
-    if not Path(credential_file).is_file():
-        raise RuntimeError(f"File service account tidak ditemukan: {credential_file}")
-    client = gspread.service_account(filename=credential_file)
+    credential_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+    if credential_json:
+        try:
+            client = gspread.service_account_from_dict(json.loads(credential_json))
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise RuntimeError("GOOGLE_SERVICE_ACCOUNT_JSON bukan JSON service account yang valid.") from exc
+    else:
+        if not Path(credential_file).is_file():
+            raise RuntimeError(f"File service account tidak ditemukan: {credential_file}")
+        client = gspread.service_account(filename=credential_file)
     book = client.open_by_key(spreadsheet_id)
     table_name = os.getenv("TABLE_WORKSHEET", "Billiard Master")
     fnb_name = os.getenv("FNB_WORKSHEET", "F&B Master")
@@ -156,6 +174,8 @@ async def receive_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     caption = message.caption or ""
     caption_source = "COM1" if "/com1" in caption.lower() else "COM2" if "/com2" in caption.lower() else None
     default_source = caption_source or context.user_data.get("source")
+    if os.getenv("BOT_MODE", "polling").strip().lower() == "webhook" and not caption_source:
+        default_source = None
     await message.reply_text(f"Saya sedang membaca {filename}. Data baru akan ditulis setelah seluruh file lolos pembacaan dan pemetaan.")
     try:
         tg_file = await context.bot.get_file(document.file_id)
@@ -175,7 +195,7 @@ async def receive_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await message.reply_text(f"Proses berhenti karena terjadi kesalahan. Jika sebagian tab sudah terisi, kirim ulang file dengan aman—ID Unik akan melewati baris yang sudah masuk.\nAlasan: {exc}")
 
 
-def main() -> None:
+def build_application() -> Application:
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     if not token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN belum diisi pada .env.")
@@ -189,6 +209,89 @@ def main() -> None:
     app.add_handler(CommandHandler("com2", select_source))
     app.add_handler(CommandHandler("source", current_source))
     app.add_handler(MessageHandler(filters.Document.ALL, receive_document))
+    return app
+
+
+telegram_app: Application | None = None
+webhook_lock = asyncio.Lock()
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    global telegram_app
+    telegram_app = build_application()
+    await telegram_app.initialize()
+    await telegram_app.start()
+
+    webhook_url = os.getenv("WEBHOOK_URL", "").strip()
+    if webhook_url:
+        secret = os.getenv("WEBHOOK_SECRET", "").strip()
+        if not secret:
+            raise RuntimeError("WEBHOOK_SECRET wajib diisi saat WEBHOOK_URL digunakan.")
+        path = os.getenv("WEBHOOK_PATH", "telegram-webhook").strip("/")
+        if not webhook_url.rstrip("/").endswith("/" + path):
+            raise RuntimeError(f"WEBHOOK_URL harus berakhir dengan /{path}.")
+        await telegram_app.bot.set_webhook(
+            url=webhook_url,
+            secret_token=secret,
+            allowed_updates=Update.ALL_TYPES,
+        )
+        log.info("Telegram webhook aktif di %s", webhook_url)
+    else:
+        log.warning("WEBHOOK_URL belum diisi; layanan aktif tetapi Telegram belum diarahkan ke webhook.")
+
+    try:
+        yield
+    finally:
+        await telegram_app.stop()
+        await telegram_app.shutdown()
+        telegram_app = None
+
+
+web_app = FastAPI(lifespan=lifespan)
+
+
+@web_app.get("/")
+async def health() -> dict[str, str]:
+    return {"status": "ok", "service": "kbc-telegram-importer"}
+
+
+@web_app.post("/{webhook_path}")
+async def telegram_webhook(webhook_path: str, request: Request) -> dict[str, str]:
+    expected_path = os.getenv("WEBHOOK_PATH", "telegram-webhook").strip("/")
+    if webhook_path != expected_path:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    secret = os.getenv("WEBHOOK_SECRET", "").strip()
+    provided_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    if not secret or not hmac.compare_digest(provided_secret, secret):
+        raise HTTPException(status_code=403, detail="Invalid webhook secret")
+
+    if telegram_app is None or not telegram_app.running:
+        raise HTTPException(status_code=503, detail="Bot is starting")
+    try:
+        update_data = await request.json()
+        update = Update.de_json(update_data, telegram_app.bot)
+        # Keep work inside the HTTP request so Cloud Run keeps CPU allocated
+        # while a PDF is parsed and rows are appended to Google Sheets.
+        async with webhook_lock:
+            await telegram_app.process_update(update)
+    except Exception:
+        log.exception("Webhook menerima payload yang tidak valid")
+        raise HTTPException(status_code=400, detail="Invalid Telegram update")
+    return {"ok": "true"}
+
+
+def main() -> None:
+    mode = os.getenv("BOT_MODE", "polling").strip().lower()
+    if mode == "webhook":
+        port = int(os.getenv("PORT", "8080"))
+        log.info("KBC Telegram importer berjalan dalam mode webhook pada port %s", port)
+        uvicorn.run(web_app, host="0.0.0.0", port=port)
+        return
+    if mode != "polling":
+        raise RuntimeError("BOT_MODE hanya boleh bernilai polling atau webhook.")
+    app = build_application()
     log.info("KBC Telegram importer berjalan; hentikan dengan Ctrl+C.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
