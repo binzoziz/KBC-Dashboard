@@ -2,19 +2,42 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+import gspread
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from analytics import prepare, occupancy, performance, daily, HOURS
 
 st.set_page_config(page_title='KBC Business Dashboard',page_icon='🎱',layout='wide')
+LEGACY_TABLE_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vQ28wjkKC-KhZ30fEb5TWzPwTRvgYdGu5vPBfplbcdTBDoEe7XQueCTo_XrSyhMf7h-uQk37gKmDrpd/pub?output=xlsx'
+LEGACY_FNB_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vTRVluG1urQGwOhAvDmtjZCJtKwZCc4SMBC_l3uDWldvOTDmHL5dSU7wH-bsC28EQ/pub?output=xlsx'
+
+def _private_worksheet(sheet_key, default_name):
+    cfg=st.secrets['google_sheets']
+    credentials=dict(st.secrets['gcp_service_account'])
+    client=gspread.service_account_from_dict(credentials)
+    book=client.open_by_key(cfg['spreadsheet_id'])
+    # Ask Sheets for numeric date serials instead of display-formatted strings.
+    # This keeps dates stable even if the sheet is displayed as dd/mm/yyyy.
+    values=book.worksheet(cfg.get(sheet_key,default_name)).get_all_records(value_render_option='UNFORMATTED_VALUE')
+    return pd.DataFrame(values)
+
+def _has_private_sheet_config():
+    try:
+        return 'google_sheets' in st.secrets and 'gcp_service_account' in st.secrets
+    except FileNotFoundError:
+        return False
+
 @st.cache_data(ttl=60,show_spinner=False)
 def load_data():
-    sheet_url='https://docs.google.com/spreadsheets/d/e/2PACX-1vQ28wjkKC-KhZ30fEb5TWzPwTRvgYdGu5vPBfplbcdTBDoEe7XQueCTo_XrSyhMf7h-uQk37gKmDrpd/pub?output=xlsx'
-    return pd.read_excel(sheet_url)
+    if _has_private_sheet_config():
+        return _private_worksheet('table_worksheet','Billiard Master')
+    return pd.read_excel(LEGACY_TABLE_URL)
+
 @st.cache_data(ttl=60,show_spinner=False)
 def load_data_fnb():
-    sheet_url_fnb='https://docs.google.com/spreadsheets/d/e/2PACX-1vTRVluG1urQGwOhAvDmtjZCJtKwZCc4SMBC_l3uDWldvOTDmHL5dSU7wH-bsC28EQ/pub?output=xlsx'
-    return pd.read_excel(sheet_url_fnb,sheet_name='Master Data')
+    if _has_private_sheet_config():
+        return _private_worksheet('fnb_worksheet','F&B Master')
+    return pd.read_excel(LEGACY_FNB_URL,sheet_name='Master Data')
 @st.cache_data(show_spinner=False)
 def cached_occupancy(d,start,end): return occupancy(d,start,end)
 def rp(v): return 'Rp '+f'{v:,.0f}'.replace(',','.')
